@@ -11,7 +11,7 @@ on:
 
 jobs:
   analyze-javascript:
-    name: Analyze JavaScript with CodeQL
+    name: Analyze JavaScript
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -22,13 +22,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Initialize CodeQL for JavaScript
+      - name: Cache CodeQL database
+        uses: actions/cache@v3
+        id: cache-codeql
+        with:
+          path: ~/.codeql
+          key: ${{ runner.os }}-codeql-js-${{ hashFiles('**/*.js', '**/*.ts') }}
+          restore-keys: |
+            ${{ runner.os }}-codeql-js-
+
+      - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: javascript
           queries: security-and-quality
 
-      - name: Build JavaScript (if needed)
+      - name: Build (if needed)
         continue-on-error: true
         run: |
           if [ -f package.json ]; then
@@ -40,6 +49,8 @@ jobs:
         with:
           category: "/language:javascript"
 
-      - name: Success Log
-        if: success()
-        run: echo "✅ CodeQL JavaScript analysis completed successfully"
+      - name: Analysis Complete
+        if: always()
+        run: |
+          echo "✅ CodeQL JavaScript analysis complete"
+          echo "Cache hit: ${{ steps.cache-codeql.outputs.cache-hit }}"
