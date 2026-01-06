@@ -2,75 +2,161 @@ name: NEXUS φ-Metric Alerts
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/5 * * * *'  # Every 5 minutes
   workflow_dispatch:
+    inputs:
+      force_alert:
+        description: 'Force create alert issue'
+        required: false
+        default: 'false'
+
+env:
+  VPS_API_URL: http://176.123.169.38:5000/vps
+  PHI_THRESHOLD: 0.75
 
 jobs:
-  analyze-phi-metric:
+  monitor-phi-metrics:
     runs-on: ubuntu-latest
-    name: Analyze φ-Metrics and Create Alerts
+
+    permissions:
+      issues: write
+      contents: read
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # === CACHING STEP (NEW!) ===
+      - name: Cache context data
+        uses: actions/cache@v3
+        id: context-cache
+        with:
+          path: ~/.nexus-cache
+          key: nexus-context-${{ github.run_id }}
+          restore-keys: |
+            nexus-context-
+
+      - name: Setup cache directory
+        run: mkdir -p ~/.nexus-cache
+
       - name: Fetch NEXUS context from VPS
         id: fetch-context
         run: |
-          response=$(curl -s -X POST http://176.123.169.38:5000/vps \
+          echo "🔍 Fetching NEXUS context from VPS..."
+
+          RESPONSE=$(curl -s -X POST "${{ env.VPS_API_URL }}" \
             -H "Content-Type: application/json" \
             -d '{"key":"claude2025","cmd":"cat /opt/bridge/io/ai_context.json"}' \
-            --connect-timeout 10 --max-time 15)
+            --connect-timeout 30 \
+            --max-time 60)
 
-          echo "Response received"
+          # Extract output from response
+          CONTEXT=$(echo "$RESPONSE" | jq -r '.out // empty')
 
-          if echo "$response" | jq -e '.out' > /dev/null 2>&1; then
-            context=$(echo "$response" | jq -r '.out')
-
-            # Получаем все phi значения и находим максимум
-            max_phi=$(echo "$context" | jq -r '.agents | to_entries | map(.value | tonumber) | max')
-            agent_count=$(echo "$context" | jq -r '.agents | length')
-
-            echo "max_phi=$max_phi" >> $GITHUB_OUTPUT
-            echo "agent_count=$agent_count" >> $GITHUB_OUTPUT
-            echo "✅ Max φ: $max_phi, Agents: $agent_count"
-          else
-            echo "ERROR: Failed to parse VPS response"
-            echo "max_phi=0" >> $GITHUB_OUTPUT
-            echo "agent_count=0" >> $GITHUB_OUTPUT
+          if [ -z "$CONTEXT" ]; then
+            echo "❌ Failed to fetch context"
+            echo "Response: $RESPONSE"
+            exit 1
           fi
 
-      - name: Create HIGH_PHI_ALERT issue
-        if: ${{ steps.fetch-context.outputs.max_phi > 0.75 }}
+          # Save to cache
+          echo "$CONTEXT" > ~/.nexus-cache/last_context.json
+
+          # Parse agents and find max phi
+          AGENTS=$(echo "$CONTEXT" | jq -r '.agents // {}')
+
+          # Calculate max phi
+          MAX_PHI=$(echo "$AGENTS" | jq -r 'to_entries | map(.value | tonumber) | max // 0')
+          MAX_AGENT=$(echo "$AGENTS" | jq -r 'to_entries | max_by(.value | tonumber) | .key // "unknown"')
+          AGENT_COUNT=$(echo "$AGENTS" | jq -r 'length')
+          AVG_PHI=$(echo "$AGENTS" | jq -r 'to_entries | map(.value | tonumber) | add / length // 0')
+
+          echo "📊 NEXUS Status:"
+          echo "   Max φ: $MAX_PHI ($MAX_AGENT)"
+          echo "   Avg φ: $AVG_PHI"
+          echo "   Agents: $AGENT_COUNT"
+
+          # Set outputs
+          echo "max_phi=$MAX_PHI" >> $GITHUB_OUTPUT
+          echo "max_agent=$MAX_AGENT" >> $GITHUB_OUTPUT
+          echo "agent_count=$AGENT_COUNT" >> $GITHUB_OUTPUT
+          echo "avg_phi=$AVG_PHI" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+          # Compare with cached previous value
+          if [ -f ~/.nexus-cache/prev_max_phi.txt ]; then
+            PREV_PHI=$(cat ~/.nexus-cache/prev_max_phi.txt)
+            DELTA=$(echo "$MAX_PHI - $PREV_PHI" | bc -l 2>/dev/null || echo "0")
+            echo "   Delta: $DELTA (vs previous)"
+            echo "phi_delta=$DELTA" >> $GITHUB_OUTPUT
+          fi
+
+          # Save current as previous for next run
+          echo "$MAX_PHI" > ~/.nexus-cache/prev_max_phi.txt
+
+      - name: Check threshold and create alert
+        if: ${{ steps.fetch-context.outputs.max_phi > env.PHI_THRESHOLD || github.event.inputs.force_alert == 'true' }}
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const maxPhi = '${{ steps.fetch-context.outputs.max_phi }}';
+            const maxAgent = '${{ steps.fetch-context.outputs.max_agent }}';
             const agentCount = '${{ steps.fetch-context.outputs.agent_count }}';
-            const timestamp = new Date().toISOString();
+            const avgPhi = '${{ steps.fetch-context.outputs.avg_phi }}';
+            const timestamp = '${{ steps.fetch-context.outputs.timestamp }}';
+            const forceAlert = '${{ github.event.inputs.force_alert }}' === 'true';
+
+            const title = forceAlert 
+              ? `🔔 MANUAL ALERT: φ = ${maxPhi} (${maxAgent})`
+              : `⚠️ HIGH PHI ALERT: φ = ${maxPhi} (${maxAgent})`;
+
+            const body = `## 🚨 NEXUS Resonance Alert
+
+**Timestamp:** ${timestamp}
+**Triggered by:** ${forceAlert ? 'Manual dispatch' : 'Automated monitoring'}
+
+### φ-Metric Status
+
+| Metric | Value |
+|--------|-------|
+| Max φ | **${maxPhi}** |
+| Agent | ${maxAgent} |
+| Threshold | 0.75 |
+| Average φ | ${avgPhi} |
+| Active Agents | ${agentCount} |
+
+### Action Required
+
+${forceAlert ? '⚡ This is a manual test alert.' : '⚠️ φ-metric exceeded threshold! Investigate immediately.'}
+
+---
+*Generated by NEXUS φ-Metric Alerts workflow*
+*Dashboard: https://bratovb24-cell.github.io/nexus-resonance/*`;
 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `⚠️ HIGH PHI ALERT: φ = ${maxPhi}`,
-              body: [
-                '🚨 **NEXUS Resonance Alert**',
-                '',
-                `**Maximum φ-Metric:** ${maxPhi}`,
-                `**Active Agents:** ${agentCount}`,
-                `**Timestamp:** ${timestamp}`,
-                `**Workflow Run:** [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
-                '',
-                '**Threshold:** 0.75',
-                '**Status:** 🔴 CRITICAL',
-                '',
-                '> φ-metric exceeded critical level! System check required.'
-              ].join('\n'),
-              labels: ['alert', 'phi-metric', 'critical']
+              title: title,
+              body: body,
+              labels: ['alert', 'phi-metric', forceAlert ? 'test' : 'critical']
             });
 
-            console.log(`✅ Issue created for φ = ${maxPhi}`);
+            console.log('✅ Alert issue created successfully');
 
-      - name: Log status
+      - name: Log status (always runs)
+        if: always()
         run: |
-          echo "φ-Metric Analysis Complete"
+          echo "=================================="
+          echo "📊 NEXUS Monitor Summary"
+          echo "=================================="
           echo "Max φ: ${{ steps.fetch-context.outputs.max_phi }}"
-          echo "Agents: ${{ steps.fetch-context.outputs.agent_count }}"
+          echo "Agent: ${{ steps.fetch-context.outputs.max_agent }}"
+          echo "Count: ${{ steps.fetch-context.outputs.agent_count }}"
+          echo "Time:  ${{ steps.fetch-context.outputs.timestamp }}"
+          echo "=================================="
+
+          if (( $(echo "${{ steps.fetch-context.outputs.max_phi }} > ${{ env.PHI_THRESHOLD }}" | bc -l) )); then
+            echo "⚠️  STATUS: ALERT TRIGGERED"
+          else
+            echo "✅ STATUS: STABLE"
+          fi
