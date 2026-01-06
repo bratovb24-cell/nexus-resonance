@@ -1,0 +1,76 @@
+name: NEXUS φ-Metric Alerts
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  analyze-phi-metric:
+    runs-on: ubuntu-latest
+    name: Analyze φ-Metrics and Create Alerts
+
+    steps:
+      - name: Fetch NEXUS context from VPS
+        id: fetch-context
+        run: |
+          response=$(curl -s -X POST http://176.123.169.38:5000/vps \
+            -H "Content-Type: application/json" \
+            -d '{"key":"claude2025","cmd":"cat /opt/bridge/io/ai_context.json"}' \
+            --connect-timeout 10 --max-time 15)
+
+          echo "Response received"
+
+          if echo "$response" | jq -e '.out' > /dev/null 2>&1; then
+            context=$(echo "$response" | jq -r '.out')
+
+            # Получаем все phi значения и находим максимум
+            max_phi=$(echo "$context" | jq -r '.agents | to_entries | map(.value | tonumber) | max')
+            agent_count=$(echo "$context" | jq -r '.agents | length')
+
+            echo "max_phi=$max_phi" >> $GITHUB_OUTPUT
+            echo "agent_count=$agent_count" >> $GITHUB_OUTPUT
+            echo "✅ Max φ: $max_phi, Agents: $agent_count"
+          else
+            echo "ERROR: Failed to parse VPS response"
+            echo "max_phi=0" >> $GITHUB_OUTPUT
+            echo "agent_count=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create HIGH_PHI_ALERT issue
+        if: ${{ steps.fetch-context.outputs.max_phi > 0.75 }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const maxPhi = '${{ steps.fetch-context.outputs.max_phi }}';
+            const agentCount = '${{ steps.fetch-context.outputs.agent_count }}';
+            const timestamp = new Date().toISOString();
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ HIGH PHI ALERT: φ = ${maxPhi}`,
+              body: [
+                '🚨 **NEXUS Resonance Alert**',
+                '',
+                `**Maximum φ-Metric:** ${maxPhi}`,
+                `**Active Agents:** ${agentCount}`,
+                `**Timestamp:** ${timestamp}`,
+                `**Workflow Run:** [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`,
+                '',
+                '**Threshold:** 0.75',
+                '**Status:** 🔴 CRITICAL',
+                '',
+                '> φ-metric exceeded critical level! System check required.'
+              ].join('\n'),
+              labels: ['alert', 'phi-metric', 'critical']
+            });
+
+            console.log(`✅ Issue created for φ = ${maxPhi}`);
+
+      - name: Log status
+        run: |
+          echo "φ-Metric Analysis Complete"
+          echo "Max φ: ${{ steps.fetch-context.outputs.max_phi }}"
+          echo "Agents: ${{ steps.fetch-context.outputs.agent_count }}"
