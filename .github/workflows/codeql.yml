@@ -20,38 +20,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'javascript' ]
+        language: [ 'javascript', 'python' ]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+        uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           queries: security-and-quality
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v2
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+      - name: Perform CodeQL Analysis (no autobuild for JS/Python)
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
-
-      - name: Upload Results
-        if: always()
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: results.sarif
-          wait-for-processing: true
 
       - name: Log Scan Results to VPS
         if: always()
         run: |
-          echo "🔍 CodeQL Scan Completed"
+          echo "✅ CodeQL Scan Completed for ${{ matrix.language }}"
           curl -s -X POST "http://176.123.169.38:5000/vps" \
             -H "Content-Type: application/json" \
-            -d '{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add CODEQL_SCAN_COMPLETED ✅ CodeQL security scan completed for language JavaScript"}' \
-            --connect-timeout 10 --max-time 30 || echo "VPS log failed (non-critical)"
+            -d '{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add CODEQL_SCAN_COMPLETED ✅ CodeQL scan completed for ${{ matrix.language }}"}' \
+            --connect-timeout 10 --max-time 30 || true
