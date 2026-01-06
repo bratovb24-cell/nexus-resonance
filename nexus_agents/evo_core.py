@@ -7,12 +7,11 @@ Inspired by EvoAgentX architecture for autonomous code evolution
 import os
 import json
 import requests
-import hashlib
+import base64
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
-import concurrent.futures
 
 # ═══════════════════════════════════════════════════════════════
 # CORE: Agent Memory & State Management
@@ -20,54 +19,42 @@ import concurrent.futures
 
 @dataclass
 class AgentMemory:
-    """Персистентная память агента"""
+    """Persistent agent memory"""
     agent_id: str
     observations: List[Dict] = field(default_factory=list)
     actions: List[Dict] = field(default_factory=list)
     phi_history: List[float] = field(default_factory=list)
 
     def observe(self, data: Dict):
-        """Записать наблюдение"""
         self.observations.append({
             "timestamp": datetime.now().isoformat(),
             "data": data
         })
-        # Ограничиваем память
         if len(self.observations) > 100:
             self.observations = self.observations[-100:]
 
     def act(self, action: Dict):
-        """Записать действие"""
         self.actions.append({
             "timestamp": datetime.now().isoformat(),
             "action": action
         })
 
     def get_recent_phi(self, n: int = 10) -> List[float]:
-        """Получить последние значения φ"""
         return self.phi_history[-n:]
-
-    def to_dict(self) -> Dict:
-        return {
-            "agent_id": self.agent_id,
-            "observations_count": len(self.observations),
-            "actions_count": len(self.actions),
-            "phi_history": self.phi_history[-10:]
-        }
 
 
 # ═══════════════════════════════════════════════════════════════
-# CORE: Base Agent Class (EvoAgentX-style)
+# CORE: Base Agent Class
 # ═══════════════════════════════════════════════════════════════
 
 class EvoAgent(ABC):
-    """Базовый класс для всех эволюционных агентов"""
+    """Base class for all evolution agents"""
 
     def __init__(self, agent_id: str, role: str):
         self.agent_id = agent_id
         self.role = role
         self.memory = AgentMemory(agent_id=agent_id)
-        self.github_token = os.getenv('GITHUB_TOKEN')
+        self.github_token = os.getenv("GITHUB_TOKEN")
         self.repo = "bratovb24-cell/nexus-resonance"
         self.headers = {
             "Authorization": f"token {self.github_token}",
@@ -76,36 +63,29 @@ class EvoAgent(ABC):
 
     @abstractmethod
     def perceive(self) -> Dict:
-        """Воспринять окружение"""
         pass
 
     @abstractmethod
     def think(self, perception: Dict) -> Dict:
-        """Обработать восприятие и принять решение"""
         pass
 
     @abstractmethod
     def act(self, decision: Dict) -> Dict:
-        """Выполнить действие"""
         pass
 
     def run_cycle(self) -> Dict:
-        """Выполнить один цикл: perceive → think → act"""
-        print(f"\n🔄 {self.role} Agent [{self.agent_id}] starting cycle...")
+        print(f"\n[{self.role}] Agent {self.agent_id} starting cycle...")
 
-        # 1. Perceive
         perception = self.perceive()
         self.memory.observe(perception)
-        print(f"   👁️ Perceived: {list(perception.keys())}")
+        print(f"  Perceived: {list(perception.keys())}")
 
-        # 2. Think
         decision = self.think(perception)
-        print(f"   🧠 Decision: {decision.get('action', 'none')}")
+        print(f"  Decision: {decision.get('action', 'none')}")
 
-        # 3. Act
         result = self.act(decision)
         self.memory.act({"decision": decision, "result": result})
-        print(f"   ⚡ Result: {result.get('status', 'unknown')}")
+        print(f"  Result: {result.get('status', 'unknown')}")
 
         return {
             "agent_id": self.agent_id,
@@ -117,11 +97,11 @@ class EvoAgent(ABC):
 
 
 # ═══════════════════════════════════════════════════════════════
-# ANALYZER AGENT: Анализирует код и находит проблемы
+# ANALYZER AGENT
 # ═══════════════════════════════════════════════════════════════
 
 class AnalyzerAgent(EvoAgent):
-    """Анализирует код и генерирует список проблем для улучшения φ"""
+    """Analyzes phi-metric and finds problems"""
 
     def __init__(self, agent_id: str = "analyzer-1"):
         super().__init__(agent_id, "Analyzer")
@@ -129,16 +109,13 @@ class AnalyzerAgent(EvoAgent):
         self.vps_key = "claude2025"
 
     def perceive(self) -> Dict:
-        """Получить текущее состояние системы"""
         perception = {
             "phi_current": 0.18,
             "phi_threshold": 0.75,
             "system_status": "stable",
-            "code_files": [],
             "issues_open": 0
         }
 
-        # Получаем φ из VPS
         try:
             response = requests.post(
                 self.vps_api,
@@ -147,143 +124,162 @@ class AnalyzerAgent(EvoAgent):
             )
             if response.status_code == 200:
                 data = response.json()
-                context = json.loads(data.get('out', '{}'))
-                agents = context.get('agents', [])
+                context = json.loads(data.get("out", "{}"))
+                agents = context.get("agents", [])
                 if agents:
-                    phi_values = [a.get('phi', 0.18) for a in agents if 'phi' in a]
-                    perception['phi_current'] = max(phi_values) if phi_values else 0.18
+                    phi_values = [a.get("phi", 0.18) for a in agents if "phi" in a]
+                    perception["phi_current"] = max(phi_values) if phi_values else 0.18
         except Exception as e:
-            print(f"   ⚠️ VPS error: {e}")
+            print(f"  VPS connection: {e}")
 
-        # Получаем открытые issues
         try:
             url = f"https://api.github.com/repos/{self.repo}/issues?state=open"
             response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
-                perception['issues_open'] = len(response.json())
+                perception["issues_open"] = len(response.json())
         except:
             pass
 
-        self.memory.phi_history.append(perception['phi_current'])
+        self.memory.phi_history.append(perception["phi_current"])
         return perception
 
     def think(self, perception: Dict) -> Dict:
-        """Анализировать и найти проблемы"""
         problems = []
+        phi = perception["phi_current"]
 
-        phi = perception['phi_current']
-        phi_history = self.memory.get_recent_phi()
-
-        # Анализ трендов
-        if len(phi_history) >= 2:
-            trend = phi_history[-1] - phi_history[0]
-            if trend < -0.05:
-                problems.append({
-                    "type": "performance_degradation",
-                    "severity": "high",
-                    "description": f"φ declining: {phi_history[0]:.3f} → {phi_history[-1]:.3f}",
-                    "suggestion": "Add caching and optimize hot paths"
-                })
-
-        # Проверка порога
         if phi > 0.5:
             problems.append({
                 "type": "high_phi_warning",
                 "severity": "medium",
-                "description": f"φ approaching threshold: {phi:.3f}",
-                "suggestion": "Review recent changes for instability"
+                "description": f"Phi approaching threshold: {phi:.3f}"
             })
 
-        # Если нет проблем - предложить улучшения
         if not problems:
             problems.append({
                 "type": "optimization_opportunity",
                 "severity": "low",
-                "description": "System stable, opportunity for optimization",
-                "suggestion": "Add more monitoring metrics"
+                "description": "System stable, monitoring"
             })
 
         return {
-            "action": "create_tasks" if problems else "monitor",
+            "action": "report" if problems else "monitor",
             "problems": problems,
             "phi_current": phi
         }
 
     def act(self, decision: Dict) -> Dict:
-        """Создать задачи для Developer Agent"""
-        if decision['action'] != 'create_tasks':
-            return {"status": "monitoring", "tasks_created": 0}
+        print(f"  Phi: {decision['phi_current']:.4f}")
+        print(f"  Problems found: {len(decision['problems'])}")
 
-        tasks_created = 0
+        for p in decision["problems"]:
+            print(f"    - [{p['severity']}] {p['type']}: {p['description']}")
 
-        for problem in decision['problems']:
-            if problem['severity'] in ['high', 'medium']:
-                # Создаем Issue
-                title = f"🔧 [{problem['severity'].upper()}] {problem['type']}: {problem['description'][:50]}"
-                body = f"""## Problem Analysis
-
-**Type:** `{problem['type']}`
-**Severity:** {problem['severity'].upper()}
-**Current φ:** {decision['phi_current']:.4f}
-
-### Description
-{problem['description']}
-
-### Suggested Fix
-{problem['suggestion']}
-
-### For Developer Agent
-- [ ] Implement suggested fix
-- [ ] Verify φ improvement
-- [ ] Create PR
-
----
-*Generated by Analyzer Agent [{self.agent_id}]*
-"""
-
-                try:
-                    url = f"https://api.github.com/repos/{self.repo}/issues"
-                    response = requests.post(url, headers=self.headers, json={
-                        "title": title,
-                        "body": body,
-                        "labels": ["auto-fix", "evo-agent", problem['severity']]
-                    })
-                    if response.status_code == 201:
-                        tasks_created += 1
-                        print(f"   📝 Created issue: {title[:40]}...")
-                except Exception as e:
-                    print(f"   ❌ Failed to create issue: {e}")
-
-        return {"status": "tasks_created", "tasks_created": tasks_created}
+        return {"status": "analyzed", "problems_count": len(decision["problems"])}
 
 
 # ═══════════════════════════════════════════════════════════════
-# DEVELOPER AGENT: Пишет код для исправления проблем
+# DEVELOPER AGENT
 # ═══════════════════════════════════════════════════════════════
 
 class DeveloperAgent(EvoAgent):
-    """Принимает задачи от Analyzer и пишет/изменяет код"""
+    """Creates fixes for problems"""
 
     def __init__(self, agent_id: str = "developer-1"):
         super().__init__(agent_id, "Developer")
-        self.fix_templates = self._load_fix_templates()
 
-    def _load_fix_templates(self) -> Dict:
-        """Загрузить шаблоны исправлений"""
+    def perceive(self) -> Dict:
+        perception = {"pending_issues": [], "open_prs": 0}
+
+        try:
+            url = f"https://api.github.com/repos/{self.repo}/issues"
+            params = {"labels": "auto-fix", "state": "open"}
+            response = requests.get(url, headers=self.headers, params=params)
+            if response.status_code == 200:
+                perception["pending_issues"] = response.json()
+        except:
+            pass
+
+        return perception
+
+    def think(self, perception: Dict) -> Dict:
+        issues = perception["pending_issues"]
+
+        if not issues:
+            return {"action": "idle", "reason": "no tasks"}
+
         return {
-            "performance_degradation": {
-                "file": "nexus_agents/optimizations.py",
-                "code": self._get_performance_fix()
-            },
-            "high_phi_warning": {
-                "file": "nexus_agents/stabilizer.py", 
-                "code": self._get_stabilizer_fix()
-            },
-            "optimization_opportunity": {
-                "file": "nexus_agents/metrics.py",
-                "code": self._get_metrics_fix()
-            }
+            "action": "ready",
+            "issues_count": len(issues)
         }
 
-    def _get_performance_fix(self) -> str:
-        return Performance Optimizations - Auto-generated
+    def act(self, decision: Dict) -> Dict:
+        if decision["action"] == "idle":
+            print("  No auto-fix issues to process")
+            return {"status": "idle"}
+
+        print(f"  Found {decision['issues_count']} issues ready for auto-fix")
+        return {"status": "ready", "issues": decision["issues_count"]}
+
+
+# ═══════════════════════════════════════════════════════════════
+# EVOLUTION PIPELINE
+# ═══════════════════════════════════════════════════════════════
+
+class EvolutionPipeline:
+    """Orchestrates the evolution cycle"""
+
+    def __init__(self):
+        self.analyzer = AnalyzerAgent()
+        self.developer = DeveloperAgent()
+        self.cycle_count = 0
+
+    def run_evolution_cycle(self) -> Dict:
+        self.cycle_count += 1
+        print(f"\n{'='*60}")
+        print(f"EVOLUTION CYCLE #{self.cycle_count}")
+        print(f"{'='*60}")
+
+        results = {
+            "cycle": self.cycle_count,
+            "timestamp": datetime.now().isoformat(),
+            "stages": {}
+        }
+
+        # Stage 1: Analysis
+        print("\n[STAGE 1] ANALYSIS")
+        print("-" * 40)
+        analyzer_result = self.analyzer.run_cycle()
+        results["stages"]["analyzer"] = analyzer_result
+
+        # Stage 2: Development
+        print("\n[STAGE 2] DEVELOPMENT")
+        print("-" * 40)
+        developer_result = self.developer.run_cycle()
+        results["stages"]["developer"] = developer_result
+
+        # Summary
+        print(f"\n{'='*60}")
+        print("CYCLE SUMMARY")
+        print(f"{'='*60}")
+        phi = analyzer_result["perception"].get("phi_current", "N/A")
+        print(f"  Phi current: {phi}")
+        print(f"  Problems: {analyzer_result['result'].get('problems_count', 0)}")
+        print(f"  Status: OK")
+
+        return results
+
+
+def main():
+    """Run evolution cycle"""
+    print("NEXUS EvoAgentX Core v3.1")
+    print("=" * 60)
+
+    pipeline = EvolutionPipeline()
+    result = pipeline.run_evolution_cycle()
+
+    print(f"\nEvolution cycle completed successfully!")
+    return result
+
+
+if __name__ == "__main__":
+    main()
