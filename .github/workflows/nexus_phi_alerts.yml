@@ -63,13 +63,13 @@ jobs:
           echo "$CONTEXT" > ~/.nexus-cache/last_context.json
 
           # Parse agents and find max phi
-          AGENTS=$(echo "$CONTEXT" | jq -r '.agents // {}')
+          AGENTS=$(echo "$CONTEXT" | jq -r '.agents // {}' 2>/dev/null || echo '{}')
 
           # Calculate max phi
-          MAX_PHI=$(echo "$AGENTS" | jq -r 'to_entries | map(.value | tonumber) | max // 0')
-          MAX_AGENT=$(echo "$AGENTS" | jq -r 'to_entries | max_by(.value | tonumber) | .key // "unknown"')
-          AGENT_COUNT=$(echo "$AGENTS" | jq -r 'length')
-          AVG_PHI=$(echo "$AGENTS" | jq -r 'to_entries | map(.value | tonumber) | add / length // 0')
+          MAX_PHI=$(echo "$AGENTS" | jq -r 'to_entries | map(.value | tonumber) | max // 0' 2>/dev/null || echo "0")
+          MAX_AGENT=$(echo "$AGENTS" | jq -r 'to_entries | max_by(.value | tonumber) | .key // "unknown"' 2>/dev/null || echo "unknown")
+          AGENT_COUNT=$(echo "$AGENTS" | jq -r 'length' 2>/dev/null || echo "0")
+          AVG_PHI=$(echo "$AGENTS" | jq -r 'to_entries | map(.value | tonumber) | add / length // 0' 2>/dev/null || echo "0")
 
           echo "📊 NEXUS Status:"
           echo "   Max φ: $MAX_PHI ($MAX_AGENT)"
@@ -81,12 +81,12 @@ jobs:
           echo "max_agent=$MAX_AGENT" >> $GITHUB_OUTPUT
           echo "agent_count=$AGENT_COUNT" >> $GITHUB_OUTPUT
           echo "avg_phi=$AVG_PHI" >> $GITHUB_OUTPUT
-          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "timestamp=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
           # Compare with cached previous value
           if [ -f ~/.nexus-cache/prev_max_phi.txt ]; then
             PREV_PHI=$(cat ~/.nexus-cache/prev_max_phi.txt)
-            DELTA=$(echo "$MAX_PHI - $PREV_PHI" | bc -l 2>/dev/null || echo "0")
+            DELTA=$(awk "BEGIN {print $MAX_PHI - $PREV_PHI}")
             echo "   Delta: $DELTA (vs previous)"
             echo "phi_delta=$DELTA" >> $GITHUB_OUTPUT
           fi
@@ -95,7 +95,9 @@ jobs:
           echo "$MAX_PHI" > ~/.nexus-cache/prev_max_phi.txt
 
       - name: Check threshold and create alert
-        if: ${{ steps.fetch-context.outputs.max_phi > env.PHI_THRESHOLD || github.event.inputs.force_alert == 'true' }}
+        if: |
+          ${{ fromJson(steps.fetch-context.outputs.max_phi) > fromJson(env.PHI_THRESHOLD) || 
+              github.event.inputs.force_alert == 'true' }}
         uses: actions/github-script@v7
         with:
           script: |
@@ -155,7 +157,10 @@ ${forceAlert ? '⚡ This is a manual test alert.' : '⚠️ φ-metric exceeded t
           echo "Time:  ${{ steps.fetch-context.outputs.timestamp }}"
           echo "=================================="
 
-          if (( $(echo "${{ steps.fetch-context.outputs.max_phi }} > ${{ env.PHI_THRESHOLD }}" | bc -l) )); then
+          MAX_PHI="${{ steps.fetch-context.outputs.max_phi }}"
+          THRESHOLD="${{ env.PHI_THRESHOLD }}"
+
+          if (( $(echo "$MAX_PHI > $THRESHOLD" | bc -l 2>/dev/null || echo 0) )); then
             echo "⚠️  STATUS: ALERT TRIGGERED"
           else
             echo "✅ STATUS: STABLE"
