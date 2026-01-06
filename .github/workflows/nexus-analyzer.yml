@@ -1,0 +1,50 @@
+name: NEXUS Analyzer Agents (Phase 3)
+
+on:
+  schedule:
+    # Каждые 30 минут (для тестирования, потом можно каждые 5)
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      num_agents:
+        description: 'Number of analyzer agents to run'
+        required: false
+        default: '8'
+
+env:
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  analyze:
+    name: Run Analyzer Agents
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      - name: Run Analyzer Agents
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🧬 NEXUS Phase 3: Starting Analyzer Agents..."
+          echo "================================================"
+          python3 nexus_agents/analyzer.py
+          echo "================================================"
+          echo "✅ Analysis cycle completed!"
+
+      - name: Log completion
+        if: always()
+        run: |
+          echo "📊 Analyzer Agents completed at $(date)"
+          echo "Next run scheduled in 30 minutes"
