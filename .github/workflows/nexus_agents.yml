@@ -1,29 +1,89 @@
 name: NEXUS Parallel Agents
+
 on:
   workflow_run:
     workflows: ["NEXUS Resonance Ticker"]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      task_count:
+        description: 'Number of parallel tasks'
+        type: choice
+        options: ['1', '2', '4', '8']
+        default: '4'
+
+permissions:
+  contents: read
+  actions: read
 
 env:
   VPS_API: http://176.123.169.38:5000/vps
-  API_KEY: claude2025
 
 jobs:
   agent-tasks:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     strategy:
       fail-fast: false
+      max-parallel: 8
       matrix:
-        task: [context_sync, memory_check, process_scan, disk_check]
+        task:
+          - name: "context_sync"
+            cmd: "cat /opt/bridge/io/ai_context.json | head -20 | md5sum"
+          - name: "memory_scan"
+            cmd: "python3 /opt/bridge/memory_cli.py search '' 2>/dev/null | wc -l"
+          - name: "process_count"
+            cmd: "ps aux | grep python | grep -v grep | wc -l"
+          - name: "disk_usage"
+            cmd: "df -h / | tail -1 | awk '{print $5}'"
+
     steps:
-      - name: Run ${{ matrix.task }}
+      - name: Run ${{ matrix.task.name }}
+        id: task
+        env:
+          API_KEY: ${{ secrets.VPS_API_KEY }}
         run: |
-          case "${{ matrix.task }}" in
-            context_sync) CMD="cat /opt/bridge/io/ai_context.json | head -20" ;;
-            memory_check) CMD="python3 /opt/bridge/memory_cli.py search '' 2>/dev/null | tail -5" ;;
-            process_scan) CMD="ps aux | grep python | wc -l" ;;
-            disk_check) CMD="df -h / | tail -1" ;;
-          esac
-          curl -s -X POST ${{ env.VPS_API }} \
-            -d "{\"key\":\"${{ env.API_KEY }}\",\"cmd\":\"$CMD\"}"
+          set -e
+
+          RESPONSE=$(curl -s -X POST "${{ env.VPS_API }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"key\":\"$API_KEY\",\"cmd\":\"${{ matrix.task.cmd }}\"}" \
+            --connect-timeout 15 \
+            --max-time 30)
+
+          OUTPUT=$(echo "$RESPONSE" | jq -r '.out // "no output"')
+          echo "output=$OUTPUT" >> $GITHUB_OUTPUT
+          echo "$OUTPUT" > task_result.txt
+
+      - name: Upload Task Result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: task-${{ matrix.task.name }}-${{ github.run_number }}
+          path: task_result.txt
+          retention-days: 3
+
+  aggregate-results:
+    needs: agent-tasks
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Download All Results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: task-*-${{ github.run_number }}
+          path: results/
+
+      - name: Report Results
+        env:
+          API_KEY: ${{ secrets.VPS_API_KEY }}
+        run: |
+          set +e
+
+          RESULT_COUNT=$(find results -type f | wc -l)
+
+          curl -s -X POST "${{ env.VPS_API }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"key\":\"$API_KEY\",\"cmd\":\"python3 /opt/bridge/memory_cli.py add gha_agents \\\"completed=$RESULT_COUNT_tasks\\\"\"}" \
+            --connect-timeout 10 || true
