@@ -66,6 +66,7 @@ jobs:
   aggregate-results:
     needs: agent-tasks
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always()
 
     steps:
