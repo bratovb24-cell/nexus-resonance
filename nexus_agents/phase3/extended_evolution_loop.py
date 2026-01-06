@@ -33,13 +33,13 @@ class ExtendedEvolutionLoop:
 
     def run_tester(self):
         """Run TesterAgent"""
-        from tester_agent import TesterAgent
+        from .tester_agent import TesterAgent
         tester = TesterAgent(self.project_root)
         return tester.run()
 
     def run_optimizer(self):
         """Run OptimizerAgent"""
-        from optimizer_agent import OptimizerAgent
+        from .optimizer_agent import OptimizerAgent
         optimizer = OptimizerAgent(self.project_root)
         return optimizer.generate_optimization_report()
 
