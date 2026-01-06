@@ -1,47 +1,106 @@
 name: NEXUS Resonance Ticker
+# Резонансный пульс системы - соответствует GitHub Actions best practices
+# GitHub Docs: https://docs.github.com/actions
+
 on:
   schedule:
-    - cron: '*/5 * * * *'
-  workflow_dispatch:
+    - cron: '*/5 * * * *'  # Каждые 5 минут
+  workflow_dispatch:       # Ручной запуск
+
+# SECURITY: Явно указываем минимальные права (principle of least privilege)
+# GitHub Docs: https://docs.github.com/actions/security-for-github-actions
+permissions:
+  contents: read      # Нужно для скачивания кода
+  actions: read       # Нужно для запуска workflow
 
 env:
   VPS_API: http://176.123.169.38:5000/vps
-  API_KEY: claude2025
 
 jobs:
   resonance-tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 3  # Каждый job должен иметь явный timeout
+
     steps:
       - name: Read AI Context
         id: context
+        env:
+          API_KEY: ${{ secrets.VPS_API_KEY }}  # Хранится в GitHub Secrets, не в коде!
         run: |
-          RESPONSE=$(curl -s -X POST ${{ env.VPS_API }} \
+          set -e  # Exit on error
+
+          RESPONSE=$(curl -s -X POST "${{ env.VPS_API }}" \
             -H "Content-Type: application/json" \
-            -d '{"key":"${{ env.API_KEY }}","cmd":"cat /opt/bridge/io/ai_context.json"}' \
-            --connect-timeout 10)
+            -d "{\"key\":\"$API_KEY\",\"cmd\":\"cat /opt/bridge/io/ai_context.json\"}" \
+            --connect-timeout 10 \
+            --max-time 15)
+
+          if [ -z "$RESPONSE" ]; then
+            echo "ERROR: Empty response from VPS API"
+            exit 1
+          fi
+
           echo "$RESPONSE" | jq -r '.out' > ai_context.json
 
-      - name: Analyze Phi
+          if [ ! -s ai_context.json ]; then
+            echo "ERROR: Context file is empty"
+            exit 1
+          fi
+
+      - name: Analyze Phi Metrics
+        id: analyze
         run: |
+          set -e
+
           python3 << 'EOF'
           import json
-          with open('ai_context.json') as f:
-              ctx = json.load(f)
+
+          try:
+              with open('ai_context.json') as f:
+                  ctx = json.load(f)
+          except json.JSONDecodeError:
+              print("ERROR: Invalid JSON in context")
+              exit(1)
+
           agents = ctx.get('agents', {})
-          phi_values = [float(v) for v in agents.values()]
-          avg = sum(phi_values)/len(phi_values) if phi_values else 0
-          high = [k for k,v in agents.items() if float(v) > 0.7]
-          print(f"Avg φ: {avg:.3f}, High: {high or 'none'}")
+          if not agents:
+              print("ERROR: No agents in context")
+              exit(1)
+
+          phi_values = [float(v) if isinstance(v, str) else v for v in agents.values()]
+          avg_phi = sum(phi_values) / len(phi_values) if phi_values else 0
+
+          high_phi = [k for k, v in agents.items() if float(v) > 0.7]
+
+          status = "HIGH" if high_phi else "OK"
+
+          print(f"STATUS={status}")
+          print(f"AVG_PHI={avg_phi:.4f}")
+          print(f"AGENT_COUNT={len(agents)}")
+
+          if high_phi:
+              print(f"HIGH_PHI_AGENTS={','.join(high_phi)}")
           EOF
 
-      - name: Log Tick
+      - name: Log Tick to Memory
+        if: always()  # Логируем даже если ошибка
+        env:
+          API_KEY: ${{ secrets.VPS_API_KEY }}
         run: |
-          curl -s -X POST ${{ env.VPS_API }} \
-            -d '{"key":"${{ env.API_KEY }}","cmd":"python3 /opt/bridge/memory_cli.py add gha_tick run_${{ github.run_number }}"}'
+          set +e  # Продолжить даже если ошибка
 
-      - uses: actions/upload-artifact@v4
+          curl -s -X POST "${{ env.VPS_API }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"key\":\"$API_KEY\",\"cmd\":\"python3 /opt/bridge/memory_cli.py add gha_tick \\\"run=${{ github.run_number }} status=${{ job.status }} time=$(date +%s)\\\"\"}" \
+            --connect-timeout 10 \
+            --max-time 15 || echo "⚠️ Memory log failed"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: tick-${{ github.run_number }}
-          path: ai_context.json
+          name: nexus-context-${{ github.run_number }}
+          path: |
+            ai_context.json
           retention-days: 7
+          if-no-files-found: ignore
