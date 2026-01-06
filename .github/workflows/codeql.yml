@@ -7,7 +7,7 @@ on:
     branches: [ main ]
   schedule:
     - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM UTC
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   analyze:
@@ -33,17 +33,22 @@ jobs:
           languages: ${{ matrix.language }}
           queries: security-and-quality
 
-      - name: Perform CodeQL Analysis (no autobuild for JS/Python)
+      - name: Build (if needed)
+        continue-on-error: true
+        run: |
+          if [ "${{ matrix.language }}" = "javascript" ]; then
+            npm install 2>/dev/null || true
+          elif [ "${{ matrix.language }}" = "python" ]; then
+            pip install -r requirements.txt 2>/dev/null || true
+          fi
+
+      - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:${{ matrix.language }}"
 
-      - name: Log Scan Results to VPS
+      - name: Log Scan Results
         if: always()
         continue-on-error: true
         run: |
           echo "✅ CodeQL Scan Completed for ${{ matrix.language }}"
-          curl -s -X POST "http://176.123.169.38:5000/vps" \
-            -H "Content-Type: application/json" \
-            -d '{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add CODEQL_SCAN_COMPLETED ✅ CodeQL scan completed for ${{ matrix.language }}"}' \
-            --connect-timeout 10 --max-time 30 || true
