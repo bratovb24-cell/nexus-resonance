@@ -32,24 +32,19 @@ jobs:
       - name: Generate Release Notes
         id: release-notes
         run: |
-          VERSION="${{ steps.get-version.outputs.version }}"
-          cat > RELEASE_NOTES.md << 'NOTES_EOF'
-          # Release Notes
+          cat > RELEASE_NOTES.md << 'EOF'
+          # NEXUS Resonance Release
 
-          ## NEXUS Resonance Release
-
-          ### Changes
-          - NEXUS Resonance φ-Monitor release
+          ## Changes
+          - NEXUS Resonance phi-Monitor release
           - All workflows operational
           - Dashboard available at GitHub Pages
 
-          ### System Status
-          - φ-Alerts: Running every 5 minutes
+          ## System Status
+          - phi-Alerts: Running every 5 minutes
           - CodeQL: JavaScript security scanning enabled
           - Environments: dev, staging, production ready
-          NOTES_EOF
-
-          echo "Release notes generated"
+          EOF
           cat RELEASE_NOTES.md
 
       - name: Create Release
@@ -65,9 +60,6 @@ jobs:
 
       - name: Release Status
         run: |
-          echo "════════════════════════════════════════"
-          echo "✅ Release workflow complete"
-          echo "════════════════════════════════════════"
+          echo "Release workflow complete"
           echo "Version: ${{ steps.get-version.outputs.version }}"
           echo "Time: $(date -u)"
-          echo "════════════════════════════════════════"
