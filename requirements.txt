@@ -1,0 +1,2 @@
+# NEXUS Analyzer Requirements
+# Minimal - using only built-in modules
