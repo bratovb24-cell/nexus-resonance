@@ -7,6 +7,7 @@ on:
     branches: [ main ]
   schedule:
     - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM UTC
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   analyze:
@@ -39,6 +40,7 @@ jobs:
 
       - name: Log Scan Results to VPS
         if: always()
+        continue-on-error: true
         run: |
           echo "✅ CodeQL Scan Completed for ${{ matrix.language }}"
           curl -s -X POST "http://176.123.169.38:5000/vps" \
