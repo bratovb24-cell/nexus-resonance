@@ -11,6 +11,8 @@ on:
   issues:
     types: [opened, labeled]
 
+  workflow_dispatch:  # Allow manual trigger
+
 jobs:
   notify-on-failure:
     name: Notify on Critical Events
@@ -18,7 +20,8 @@ jobs:
 
     if: |
       github.event.workflow_run.conclusion == 'failure' ||
-      github.event_name == 'issues'
+      github.event_name == 'issues' ||
+      github.event_name == 'workflow_dispatch'
 
     permissions:
       issues: read
@@ -50,6 +53,7 @@ jobs:
 
       - name: Log notification event to VPS
         if: always()
+        continue-on-error: true
         run: |
           EVENT_TYPE="${{ github.event_name }}"
           WORKFLOW="${{ github.event.workflow_run.name || 'N/A' }}"
