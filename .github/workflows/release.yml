@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:  # Allow manual trigger (use main branch)
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from tag or manual input
+      - name: Get version from tag
         id: tag_name
         run: |
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
@@ -31,19 +31,17 @@ jobs:
             VERSION="v0.1.0-manual"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
 
       - name: Generate Release Notes
         id: release_notes
         continue-on-error: true
         run: |
           VERSION="${{ steps.tag_name.outputs.version }}"
-          echo "Generating release notes for $VERSION..."
 
           # Get commits since last tag
-          PREV_TAG=$(git describe --tags --abbrev=0 @^ 2>/dev/null || echo "initial")
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-          if [ "$PREV_TAG" = "initial" ]; then
+          if [ -z "$PREV_TAG" ]; then
             COMMITS=$(git log --oneline --format="- %h: %s")
           else
             COMMITS=$(git log "$PREV_TAG..HEAD" --oneline --format="- %h: %s")
@@ -53,17 +51,11 @@ jobs:
           RELEASE_NOTES="# Release $VERSION
 
 ## Changes
-$COMMITS
+\$COMMITS
 
-## Stats
-- Commits: $(echo "$COMMITS" | wc -l)
-- Version: $VERSION
-- Date: $(date -u +%Y-%m-%d)
+## Timestamp
+Released: $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)"
 
----
-_Generated automatically by GitHub Actions_"
-
-          # Escape for multiline output
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -80,11 +72,11 @@ _Generated automatically by GitHub Actions_"
           prerelease: false
         continue-on-error: true
 
-      - name: Log release to VPS
+      - name: Log Release
         if: always()
         continue-on-error: true
         run: |
           curl -s -X POST "http://176.123.169.38:5000/vps" \
             -H "Content-Type: application/json" \
-            -d '{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add RELEASE_CREATED version=${{ steps.tag_name.outputs.version }} status=success"}' \
-            --connect-timeout 10 --max-time 30 || true
+            -d '{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add RELEASE_CREATED version=${{ steps.tag_name.outputs.version }}"}' \
+            --connect-timeout 5 --max-time 10 || true
