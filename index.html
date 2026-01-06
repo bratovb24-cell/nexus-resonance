@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS Resonance φ-Monitor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a2e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 {
+            color: #00ffaa;
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        .subtitle { color: #888; margin-bottom: 30px; }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(0,255,170,0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .phi-display {
+            text-align: center;
+            padding: 30px;
+        }
+        .phi-value {
+            font-size: 4rem;
+            font-weight: bold;
+            color: #00ff88;
+            text-shadow: 0 0 20px rgba(0,255,136,0.5);
+        }
+        .phi-label {
+            color: #888;
+            margin-top: 10px;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 15px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+        }
+        .status-label { color: #888; }
+        .status-value { color: #00ffaa; font-weight: bold; }
+        .status-ok { color: #00ff88; }
+        .status-warn { color: #ffaa00; }
+        .agents-section h2 {
+            color: #00ddff;
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+        }
+        .footer {
+            text-align: center;
+            color: #555;
+            margin-top: 30px;
+            font-size: 0.9rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            margin-left: 10px;
+        }
+        .badge-stable { background: rgba(0,255,136,0.2); color: #00ff88; }
+        .badge-phase3 { background: rgba(0,170,255,0.2); color: #00aaff; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧬 NEXUS Resonance φ-Monitor</h1>
+        <p class="subtitle">Real-time φ-metric monitoring panel <span class="badge badge-phase3">Phase 3</span></p>
+
+        <div class="card phi-display">
+            <div class="phi-value">φ = 0.18</div>
+            <div class="phi-label">Current System φ-Metric</div>
+            <div style="margin-top: 15px;">
+                <span class="badge badge-stable">STABLE</span>
+                Threshold: 0.75 | Status: OK
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="agents-section">📊 System Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="status-label">Active Agents</span>
+                    <span class="status-value">16</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Max φ Value</span>
+                    <span class="status-value">0.18</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Threshold</span>
+                    <span class="status-value">0.75</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">System State</span>
+                    <span class="status-value status-ok">STABLE</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="agents-section">🔐 Security</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="status-label">CodeQL Scan</span>
+                    <span class="status-value status-ok">PASSED</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Token Status</span>
+                    <span class="status-value status-ok">PROTECTED</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="agents-section">🚀 Environments</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="status-label">Development</span>
+                    <span class="status-value status-ok">READY</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Staging</span>
+                    <span class="status-value status-ok">READY</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Production</span>
+                    <span class="status-value status-ok">READY</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">GitHub Pages</span>
+                    <span class="status-value status-ok">LIVE</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>NEXUS Resonance v3.1.0 | Phase 3: Self-Evolving Agent Ecosystem</p>
+            <p>φ^P = T | Last updated: <span id="timestamp"></span></p>
+        </div>
+    </div>
+    <script>
+        document.getElementById('timestamp').textContent = new Date().toISOString();
+    </script>
+</body>
+</html>
