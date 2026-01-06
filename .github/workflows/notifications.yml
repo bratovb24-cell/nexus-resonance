@@ -11,7 +11,7 @@ on:
   issues:
     types: [opened, labeled]
 
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   notify-on-failure:
@@ -26,39 +26,40 @@ jobs:
     permissions:
       issues: read
       pull-requests: read
+      contents: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Workflow Failure Notification
-        if: github.event_name == 'workflow_run'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const workflow = context.payload.workflow_run;
-            console.log(`Workflow: ${workflow.name}`);
-            console.log(`Conclusion: ${workflow.conclusion}`);
-            console.log(`Run: ${workflow.html_url}`);
+      - name: Log Notification Event
+        run: |
+          echo "Event: ${{ github.event_name }}"
+          echo "Workflow: ${{ github.event.workflow_run.name }}"
+          echo "Conclusion: ${{ github.event.workflow_run.conclusion }}"
+          echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-      - name: Critical Issue Notification
-        if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'critical')
+      - name: Comment on Issues
+        if: github.event_name == 'issues'
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const issue = context.payload.issue;
-            console.log(`Critical issue opened: #${issue.number}`);
-            console.log(`Title: ${issue.title}`);
-            console.log(`URL: ${issue.html_url}`);
+            if (issue.labels.some(label => label.name === 'critical')) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '🚨 Critical issue detected. Monitoring...'
+              });
+            }
 
-      - name: Log notification event to VPS
+      - name: Log to VPS
         if: always()
         continue-on-error: true
         run: |
-          EVENT_TYPE="${{ github.event_name }}"
-          WORKFLOW="${{ github.event.workflow_run.name || 'N/A' }}"
-
           curl -s -X POST "http://176.123.169.38:5000/vps" \
             -H "Content-Type: application/json" \
-            -d "{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add NOTIFICATION_SENT event_type=$EVENT_TYPE workflow=$WORKFLOW"}" \
-            --connect-timeout 10 --max-time 30 || true
+            -d '{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add NOTIFICATION_SENT event=${{ github.event_name }}"}' \
+            --connect-timeout 5 --max-time 10 || true
