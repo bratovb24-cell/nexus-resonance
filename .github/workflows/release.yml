@@ -38,29 +38,28 @@ jobs:
         run: |
           VERSION="${{ steps.tag_name.outputs.version }}"
 
-          # Get commits since last tag
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
           if [ -z "$PREV_TAG" ]; then
-            COMMITS=$(git log --oneline --format="- %h: %s")
+            COMMITS=$(git log --oneline --format="- %h: %s" | head -20)
           else
             COMMITS=$(git log "$PREV_TAG..HEAD" --oneline --format="- %h: %s")
           fi
 
-          # Create release notes
           RELEASE_NOTES="# Release $VERSION
 
 ## Changes
-\$COMMITS
+$COMMITS
 
-## Timestamp
-Released: $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)"
+## Info
+- Version: $VERSION
+- Released: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
 
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,11 +71,8 @@ Released: $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)"
           prerelease: false
         continue-on-error: true
 
-      - name: Log Release
+      - name: Log Release Creation
         if: always()
-        continue-on-error: true
         run: |
-          curl -s -X POST "http://176.123.169.38:5000/vps" \
-            -H "Content-Type: application/json" \
-            -d '{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add RELEASE_CREATED version=${{ steps.tag_name.outputs.version }}"}' \
-            --connect-timeout 5 --max-time 10 || true
+          echo "Release workflow completed"
+          echo "Version: ${{ steps.tag_name.outputs.version }}"
