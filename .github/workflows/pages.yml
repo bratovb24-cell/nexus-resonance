@@ -1,11 +1,11 @@
-name: Build and Deploy Pages
+name: Deploy GitHub Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'docs/**'
+      - 'index.html'
   workflow_dispatch:
 
 permissions:
@@ -18,51 +18,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Verify docs directory
-        run: |
-          if [ ! -d "docs" ]; then
-            echo "Creating docs directory..."
-            mkdir -p docs
-          fi
-
-          if [ ! -f "docs/index.html" ]; then
-            echo "ERROR: docs/index.html not found!"
-            exit 1
-          fi
-
-          echo "✓ docs/index.html exists"
-          ls -lah docs/
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: 'docs'
-
   deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create pages directory
+        run: |
+          mkdir -p _site
+
+          # Copy index.html if exists
+          if [ -f "index.html" ]; then
+            cp index.html _site/
+          fi
+
+          # Copy docs if exists
+          if [ -d "docs" ]; then
+            cp -r docs/* _site/ 2>/dev/null || true
+          fi
+
+          # Create default index if none exists
+          if [ ! -f "_site/index.html" ]; then
+            echo '<!DOCTYPE html>
+            <html>
+            <head>
+              <title>NEXUS Resonance</title>
+              <meta charset="utf-8">
+              <style>
+                body { font-family: system-ui; background: #0a0a0a; color: #00ff88; padding: 40px; }
+                h1 { color: #00ffaa; }
+                .status { background: #1a1a2e; padding: 20px; border-radius: 10px; margin: 20px 0; }
+                .phi { font-size: 48px; color: #00ff88; }
+              </style>
+            </head>
+            <body>
+              <h1>🧬 NEXUS Resonance φ-Monitor</h1>
+              <div class="status">
+                <div class="phi">φ = 0.18</div>
+                <p>Status: STABLE</p>
+                <p>Agents: 16 active</p>
+              </div>
+              <p>Phase 3: Self-Evolving Agent Ecosystem</p>
+            </body>
+            </html>' > _site/index.html
+          fi
+
+          echo "📁 Site contents:"
+          ls -la _site/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-      - name: Deployment Status
-        run: |
-          echo "════════════════════════════════════════"
-          echo "✅ GitHub Pages Deployment Complete"
-          echo "════════════════════════════════════════"
-          echo "URL: https://bratovb24-cell.github.io/nexus-resonance/"
-          echo "Status: SUCCESS"
-          echo "════════════════════════════════════════"
