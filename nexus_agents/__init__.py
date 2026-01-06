@@ -6,5 +6,11 @@ __version__ = "3.0.0"
 __author__ = "NEXUS Resonance System"
 
 from .analyzer import AnalyzerAgent, run_parallel_analyzers
+from .developer import DeveloperAgent, run_developer_agents
 
-__all__ = ['AnalyzerAgent', 'run_parallel_analyzers']
+__all__ = [
+    'AnalyzerAgent', 
+    'run_parallel_analyzers',
+    'DeveloperAgent',
+    'run_developer_agents'
+]
