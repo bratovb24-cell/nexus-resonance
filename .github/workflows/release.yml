@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:  # Allow manual trigger (use main branch)
 
 permissions:
   contents: write
@@ -21,15 +22,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get version from tag
+      - name: Get version from tag or manual input
         id: tag_name
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION="v0.1.0-manual"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "version_num=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
 
       - name: Generate Release Notes
         id: release_notes
+        continue-on-error: true
         run: |
           VERSION="${{ steps.tag_name.outputs.version }}"
           echo "Generating release notes for $VERSION..."
@@ -76,6 +82,7 @@ _Generated automatically by GitHub Actions_"
 
       - name: Log release to VPS
         if: always()
+        continue-on-error: true
         run: |
           curl -s -X POST "http://176.123.169.38:5000/vps" \
             -H "Content-Type: application/json" \
