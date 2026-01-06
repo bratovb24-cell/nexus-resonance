@@ -1,0 +1,47 @@
+name: NEXUS Resonance Ticker
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+env:
+  VPS_API: http://176.123.169.38:5000/vps
+  API_KEY: claude2025
+
+jobs:
+  resonance-tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read AI Context
+        id: context
+        run: |
+          RESPONSE=$(curl -s -X POST ${{ env.VPS_API }} \
+            -H "Content-Type: application/json" \
+            -d '{"key":"${{ env.API_KEY }}","cmd":"cat /opt/bridge/io/ai_context.json"}' \
+            --connect-timeout 10)
+          echo "$RESPONSE" | jq -r '.out' > ai_context.json
+
+      - name: Analyze Phi
+        run: |
+          python3 << 'EOF'
+          import json
+          with open('ai_context.json') as f:
+              ctx = json.load(f)
+          agents = ctx.get('agents', {})
+          phi_values = [float(v) for v in agents.values()]
+          avg = sum(phi_values)/len(phi_values) if phi_values else 0
+          high = [k for k,v in agents.items() if float(v) > 0.7]
+          print(f"Avg φ: {avg:.3f}, High: {high or 'none'}")
+          EOF
+
+      - name: Log Tick
+        run: |
+          curl -s -X POST ${{ env.VPS_API }} \
+            -d '{"key":"${{ env.API_KEY }}","cmd":"python3 /opt/bridge/memory_cli.py add gha_tick run_${{ github.run_number }}"}'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tick-${{ github.run_number }}
+          path: ai_context.json
+          retention-days: 7
