@@ -1,0 +1,38 @@
+name: NEXUS Weekly Analysis
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+env:
+  VPS_API: http://176.123.169.38:5000/vps
+  API_KEY: claude2025
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect Data
+        run: |
+          curl -s -X POST ${{ env.VPS_API }} \
+            -d '{"key":"${{ env.API_KEY }}","cmd":"cat /opt/bridge/io/ai_context.json"}' \
+            | jq -r '.out' > context.json
+          curl -s -X POST ${{ env.VPS_API }} \
+            -d '{"key":"${{ env.API_KEY }}","cmd":"ps aux | grep python | wc -l"}' \
+            | jq -r '.out' > procs.txt
+
+      - name: Generate Report
+        run: |
+          python3 << 'EOF'
+          import json
+          with open('context.json') as f:
+              ctx = json.load(f)
+          agents = ctx.get('agents', {})
+          phi = [float(v) for v in agents.values()]
+          print(f"Weekly Report: {len(agents)} agents, avg φ={sum(phi)/len(phi):.3f}")
+          EOF
+
+      - name: Send Report
+        run: |
+          curl -s -X POST ${{ env.VPS_API }} \
+            -d '{"key":"${{ env.API_KEY }}","cmd":"python3 /opt/bridge/memory_cli.py add weekly_gha completed"}'
