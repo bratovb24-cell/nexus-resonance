@@ -3,81 +3,58 @@ name: Notifications for Critical Events
 on:
   workflow_run:
     workflows:
-      - 'NEXUS φ-Metric Alerts'
-      - 'NEXUS Deploy to Environments'
-      - 'Create Release & Generate Release Notes'
-    types: [completed]
+      - "CodeQL Advanced Security Scanning"
+      - "NEXUS φ-Metric Alerts"
+    types:
+      - completed
+
   issues:
     types: [opened, labeled]
 
 jobs:
-  notify-critical:
-    name: Send Critical Alerts
+  notify-on-failure:
+    name: Notify on Critical Events
     runs-on: ubuntu-latest
-    if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'critical')
+
+    if: |
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event_name == 'issues'
+
+    permissions:
+      issues: read
+      pull-requests: read
 
     steps:
-      - name: Check High PHI Alert
-        id: check_alert
-        run: |
-          TITLE="${{ github.event.issue.title }}"
-          if [[ "$TITLE" == *"HIGH PHI ALERT"* ]]; then
-            echo "alert_type=HIGH_PHI" >> $GITHUB_OUTPUT
-            echo "severity=CRITICAL" >> $GITHUB_OUTPUT
-          fi
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Notify VPS on Critical Alert
-        run: |
-          ISSUE_URL="${{ github.event.issue.html_url }}"
-          ISSUE_TITLE="${{ github.event.issue.title }}"
-          curl -s -X POST "http://176.123.169.38:5000/vps" \
-            -H "Content-Type: application/json" \
-            -d "{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add CRITICAL_ALERT_GITHUB '🚨 $ISSUE_TITLE - $ISSUE_URL'"}" \
-            --connect-timeout 10 --max-time 30 || true
-
-  notify-release:
-    name: Notify on Release Created
-    runs-on: ubuntu-latest
-    if: github.event.workflow_run.name == 'Create Release & Generate Release Notes' && 
-        github.event.workflow_run.conclusion == 'success'
-
-    steps:
-      - name: Get Release Info
+      - name: Workflow Failure Notification
+        if: github.event_name == 'workflow_run'
         uses: actions/github-script@v7
-        id: get_release
         with:
           script: |
-            const releases = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 1
-            });
+            const workflow = context.payload.workflow_run;
+            console.log(`Workflow: ${workflow.name}`);
+            console.log(`Conclusion: ${workflow.conclusion}`);
+            console.log(`Run: ${workflow.html_url}`);
 
-            if (releases.data.length > 0) {
-              const release = releases.data[0];
-              console.log(`Release: ${release.tag_name}`);
-              console.log(`URL: ${release.html_url}`);
-              return release.tag_name;
-            }
+      - name: Critical Issue Notification
+        if: github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'critical')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            console.log(`Critical issue opened: #${issue.number}`);
+            console.log(`Title: ${issue.title}`);
+            console.log(`URL: ${issue.html_url}`);
 
-      - name: Notify VPS on New Release
+      - name: Log notification event to VPS
+        if: always()
         run: |
+          EVENT_TYPE="${{ github.event_name }}"
+          WORKFLOW="${{ github.event.workflow_run.name || 'N/A' }}"
+
           curl -s -X POST "http://176.123.169.38:5000/vps" \
             -H "Content-Type: application/json" \
-            -d "{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add NEW_RELEASE_CREATED '✅ GitHub Release created - https://github.com/bratovb24-cell/nexus-resonance/releases'"}" \
-            --connect-timeout 10 --max-time 30 || true
-
-  notify-workflow-failure:
-    name: Notify on Workflow Failure
-    runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'failure'
-
-    steps:
-      - name: Notify VPS on Workflow Failure
-        run: |
-          WORKFLOW="${{ github.event.workflow_run.name }}"
-          WORKFLOW_URL="${{ github.event.workflow_run.html_url }}"
-          curl -s -X POST "http://176.123.169.38:5000/vps" \
-            -H "Content-Type: application/json" \
-            -d "{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add WORKFLOW_FAILURE '⚠️ Workflow Failed: $WORKFLOW - $WORKFLOW_URL'"}" \
+            -d "{"key":"claude2025","cmd":"python3 /opt/bridge/memory_cli.py add NOTIFICATION_SENT event_type=$EVENT_TYPE workflow=$WORKFLOW"}" \
             --connect-timeout 10 --max-time 30 || true
