@@ -1,0 +1,42 @@
+# GitHub Pages Configuration
+theme: jekyll-theme-minimal
+title: NEXUS Resonance φ-Monitor
+description: Real-time φ-metric monitoring dashboard and system status
+
+# Build configuration
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+
+# Exclude from build
+exclude:
+  - .github
+  - .git
+  - .gitignore
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle
+  - vendor/cache
+  - vendor/gems
+  - vendor/ruby
+
+# Include
+include:
+  - .nojekyll
+
+# Keep files
+keep_files:
+  - index.html
+  - assets
+
+# Collections
+collections_dir: docs
+
+# Show drafts
+show_drafts: false
+
+# Locale
+locale: en_US
+timezone: UTC
