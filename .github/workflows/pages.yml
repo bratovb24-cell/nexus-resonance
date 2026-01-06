@@ -1,9 +1,11 @@
-name: pages build and deployment
+name: Build and Deploy Pages
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -48,7 +50,7 @@ jobs:
   deploy:
     environment:
       name: github-pages
-      url: \${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
     steps:
@@ -58,9 +60,9 @@ jobs:
 
       - name: Deployment Status
         run: |
-          echo "═══════════════════════════════════════"
+          echo "════════════════════════════════════════"
           echo "✅ GitHub Pages Deployment Complete"
-          echo "═══════════════════════════════════════"
+          echo "════════════════════════════════════════"
           echo "URL: https://bratovb24-cell.github.io/nexus-resonance/"
           echo "Status: SUCCESS"
-          echo "═══════════════════════════════════════"
+          echo "════════════════════════════════════════"
