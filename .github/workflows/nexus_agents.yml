@@ -1,0 +1,29 @@
+name: NEXUS Parallel Agents
+on:
+  workflow_run:
+    workflows: ["NEXUS Resonance Ticker"]
+    types: [completed]
+  workflow_dispatch:
+
+env:
+  VPS_API: http://176.123.169.38:5000/vps
+  API_KEY: claude2025
+
+jobs:
+  agent-tasks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [context_sync, memory_check, process_scan, disk_check]
+    steps:
+      - name: Run ${{ matrix.task }}
+        run: |
+          case "${{ matrix.task }}" in
+            context_sync) CMD="cat /opt/bridge/io/ai_context.json | head -20" ;;
+            memory_check) CMD="python3 /opt/bridge/memory_cli.py search '' 2>/dev/null | tail -5" ;;
+            process_scan) CMD="ps aux | grep python | wc -l" ;;
+            disk_check) CMD="df -h / | tail -1" ;;
+          esac
+          curl -s -X POST ${{ env.VPS_API }} \
+            -d "{\"key\":\"${{ env.API_KEY }}\",\"cmd\":\"$CMD\"}"
