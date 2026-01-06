@@ -13,15 +13,23 @@ on:
 
 env:
   PYTHONUNBUFFERED: 1
+  PYTHONIOENCODING: utf-8
 
 jobs:
   analyze:
     name: Run Analyzer Agents
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
@@ -31,11 +39,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests
+          pip install requests pyyaml
 
       - name: Run Analyzer Agents
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUM_AGENTS: ${{ inputs.num_agents || '8' }}
         run: |
           echo "🧬 NEXUS Phase 3: Starting Analyzer Agents..."
           echo "================================================"

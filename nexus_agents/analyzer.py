@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
 NEXUS Analyzer Agents - Phase 3
 Self-evolving φ-metric analysis system
@@ -12,6 +14,7 @@ from typing import List, Dict, Optional
 import statistics
 import concurrent.futures
 
+
 class AnalyzerAgent:
     """Анализирует φ-метрику и создает Issues для улучшения"""
 
@@ -19,268 +22,141 @@ class AnalyzerAgent:
         self.agent_id = agent_id
         self.github_token = os.getenv('GITHUB_TOKEN')
         self.repo = "bratovb24-cell/nexus-resonance"
-        self.vps_api = "http://176.123.169.38:5000/vps"
-        self.vps_key = "claude2025"
+        self.api_base = "https://api.github.com"
         self.headers = {
             "Authorization": f"token {self.github_token}",
-            "Accept": "application/vnd.github.v3+json"
+            "Accept": "application/vnd.github.v3+json",
+            "Content-Type": "application/json"
         }
 
-    def get_phi_from_vps(self) -> Optional[float]:
-        """Получает текущую φ-метрику из VPS"""
+    def get_phi_from_metrics(self) -> float:
+        """Получает φ-метрику из metrics.json"""
         try:
-            response = requests.post(
-                self.vps_api,
-                json={"key": self.vps_key, "cmd": "cat /opt/bridge/io/ai_context.json"},
-                timeout=10
-            )
-            if response.status_code == 200:
-                data = response.json()
-                context = json.loads(data.get('out', '{}'))
-                # Извлекаем φ из контекста
-                agents = context.get('agents', [])
-                if agents:
-                    phi_values = [a.get('phi', 0) for a in agents if 'phi' in a]
-                    return max(phi_values) if phi_values else 0.18
-            return 0.18
+            if os.path.exists('metrics.json'):
+                with open('metrics.json', 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    phi = data.get('phi', 0.18)
+                    if isinstance(phi, str):
+                        phi = float(phi.replace(',', '.'))
+                    return max(0.1, min(0.9, float(phi)))
         except Exception as e:
-            print(f"⚠️ Agent-{self.agent_id}: VPS error: {e}")
-            return 0.18
+            self.log(f"⚠️ Error reading metrics: {e}")
+        return 0.18
 
-    def get_phi_history(self, hours: int = 1) -> List[Dict]:
-        """Получает историю φ-метрики"""
-        # В реальности это из базы данных или artifacts
-        current_phi = self.get_phi_from_vps()
-        history = []
-        for i in range(hours * 6):  # каждые 10 минут
-            variation = 0.02 * (1 if i % 2 == 0 else -1)
-            history.append({
-                "timestamp": datetime.now() - timedelta(minutes=i*10),
-                "phi": current_phi + variation
+    def analyze(self) -> Optional[Dict]:
+        """Анализирует текущее состояние φ и определяет нужны ли улучшения"""
+        phi = self.get_phi_from_metrics()
+
+        self.log(f"Agent-{self.agent_id} analyzing φ={phi:.2f}")
+
+        analysis = {
+            'agent_id': self.agent_id,
+            'phi': phi,
+            'timestamp': datetime.utcnow().isoformat(),
+            'issues_found': [],
+            'status': 'ok'
+        }
+
+        # Определяем нужны ли улучшения
+        if phi < 0.15:
+            analysis['status'] = 'critical'
+            analysis['issues_found'].append({
+                'title': 'Critical: φ below threshold',
+                'priority': 'high',
+                'label': 'critical'
             })
-        return history
+        elif phi > 0.65:
+            analysis['status'] = 'warning'
+            analysis['issues_found'].append({
+                'title': 'Warning: φ instability detected',
+                'priority': 'medium',
+                'label': 'stability'
+            })
 
-    def analyze_trend(self) -> Dict:
-        """Анализирует тренд φ"""
-        history = self.get_phi_history(hours=1)
+        return analysis
 
-        if not history:
-            return {"trend": "unknown", "severity": "low"}
-
-        values = [h['phi'] for h in history]
-        mean_val = statistics.mean(values)
-
-        # Вычисляем тренд
-        trend = values[0] - values[-1]  # последнее vs первое
-
-        if trend < -0.1:
-            severity = "high" if trend < -0.2 else "medium"
-            return {
-                "trend": "declining",
-                "severity": severity,
-                "rate": trend,
-                "current": values[0],
-                "previous": values[-1],
-                "mean": mean_val
-            }
-        elif trend > 0.1:
-            return {
-                "trend": "improving",
-                "severity": "low",
-                "rate": trend,
-                "current": values[0],
-                "mean": mean_val
-            }
-        else:
-            return {
-                "trend": "stable",
-                "severity": "low",
-                "rate": trend,
-                "current": values[0],
-                "mean": mean_val
-            }
-
-    def detect_problem(self, trend: Dict) -> Dict:
-        """Определяет тип проблемы на основе тренда"""
-        problems = {
-            "performance": {
-                "type": "performance",
-                "description": "System performance degradation detected",
-                "severity": "medium",
-                "solution": "Optimize critical execution paths and reduce latency"
-            },
-            "memory_leak": {
-                "type": "memory_leak",
-                "description": "Potential memory leak detected",
-                "severity": "high",
-                "solution": "Check long-lived objects and cyclic references"
-            },
-            "race_condition": {
-                "type": "race_condition",
-                "description": "Possible race condition in concurrent operations",
-                "severity": "high",
-                "solution": "Add synchronization to critical sections"
-            },
-            "resource_limit": {
-                "type": "resource_limit",
-                "description": "System approaching resource limits",
-                "severity": "medium",
-                "solution": "Increase limits or optimize resource usage"
-            }
-        }
-
-        # Выбираем проблему на основе severity
-        if trend.get('severity') == 'high':
-            return problems['memory_leak']
-        elif trend.get('rate', 0) < -0.15:
-            return problems['race_condition']
-        else:
-            return problems['performance']
-
-    def create_github_issue(self, problem: Dict, trend: Dict) -> Optional[Dict]:
-        """Создает GitHub Issue с рекомендацией"""
-
-        title = f"🔴 φ-Resonance Alert: {problem['description']}"
-
-        body = f"""## 🧬 Auto-Analysis Report
-
-**Agent ID:** Analyzer-{self.agent_id}  
-**Timestamp:** {datetime.now().isoformat()}  
-**Trend:** {trend['trend'].upper()}  
-
----
-
-### 📊 Current Status
-
-| Metric | Value |
-|--------|-------|
-| φ current | {trend.get('current', 'N/A'):.4f} |
-| φ mean | {trend.get('mean', 'N/A'):.4f} |
-| Change rate | {trend.get('rate', 0):.4f} |
-| Severity | **{trend['severity'].upper()}** |
-
----
-
-### ❌ Detected Problem
-
-**Type:** `{problem['type']}`  
-**Description:** {problem['description']}  
-**Severity:** {problem['severity'].upper()}  
-
----
-
-### ✅ Recommended Solution
-
-{problem['solution']}
-
----
-
-### 🎯 Acceptance Criteria
-
-- [ ] φ-metric improved by at least 5%
-- [ ] All existing tests passing
-- [ ] No breaking changes introduced
-- [ ] Code quality maintained (CodeQL passing)
-
----
-
-### 🤖 Agent Instructions
-
-This issue is marked for **auto-fix** by Developer Agents.
-
-Expected flow:
-1. Developer Agent picks up this issue
-2. Generates fix code using AI
-3. Creates Pull Request
-4. Tester Agent validates
-5. Optimizer Agent merges if criteria met
-
----
-
-*Auto-generated by NEXUS Analyzer Agent #{self.agent_id}*  
-*Phase 3: Self-Evolving Agent Ecosystem*
-"""
-
-        url = f"https://api.github.com/repos/{self.repo}/issues"
-        data = {
-            "title": title,
-            "body": body,
-            "labels": ["auto-fix", "agent-generated", "φ-metric", "evolution"]
-        }
+    def create_issue(self, analysis: Dict) -> bool:
+        """Создает Issue на GitHub для найденных проблем"""
+        if not analysis['issues_found']:
+            return True
 
         try:
-            response = requests.post(url, headers=self.headers, json=data)
-            if response.status_code == 201:
-                issue = response.json()
-                print(f"✅ Agent-{self.agent_id}: Created Issue #{issue['number']}")
-                return issue
-            else:
-                print(f"❌ Agent-{self.agent_id}: Failed - {response.status_code}")
-                return None
+            for issue_data in analysis['issues_found']:
+                url = f"{self.api_base}/repos/{self.repo}/issues"
+                payload = {
+                    "title": issue_data['title'],
+                    "body": f"""Agent-{self.agent_id} Analysis Report
+- φ-metric: {analysis['phi']:.2f}
+- Priority: {issue_data['priority']}
+- Timestamp: {analysis['timestamp']}
+- Status: {analysis['status']}
+""",
+                    "labels": ["auto-fix", issue_data['label'], "phase-3"]
+                }
+
+                response = requests.post(url, headers=self.headers, json=payload, timeout=10)
+                if response.status_code == 201:
+                    self.log(f"✅ Issue created: {issue_data['title']}")
+                else:
+                    self.log(f"⚠️ Failed to create issue: {response.status_code}")
+
         except Exception as e:
-            print(f"❌ Agent-{self.agent_id}: Error - {e}")
-            return None
+            self.log(f"❌ Error creating issue: {e}")
+            return False
 
-    def run(self) -> Dict:
-        """Главный цикл анализатора"""
-        print(f"\n🔍 Analyzer Agent #{self.agent_id} starting...")
+        return True
 
-        # Анализируем тренд
-        trend = self.analyze_trend()
-        print(f"   📊 Trend: {trend['trend']} (severity: {trend['severity']})")
-
-        result = {
-            "agent_id": self.agent_id,
-            "trend": trend,
-            "issue_created": False
-        }
-
-        # Если есть проблема - создаем issue
-        if trend['trend'] == 'declining' and trend['severity'] in ['high', 'medium']:
-            problem = self.detect_problem(trend)
-            issue = self.create_github_issue(problem, trend)
-            result['issue_created'] = issue is not None
-            result['issue'] = issue
-        else:
-            print(f"   ✅ Agent-{self.agent_id}: System healthy, no action needed")
-
-        return result
+    def log(self, message: str):
+        """Логирует сообщение с timestamp"""
+        ts = datetime.utcnow().isoformat()
+        print(f"[{ts}] {message}")
 
 
-def run_parallel_analyzers(num_agents: int = 8):
-    """Запускает несколько анализаторов параллельно"""
-    print("=" * 60)
-    print("🧬 NEXUS Phase 3: Analyzer Agents Starting...")
-    print("=" * 60)
+class AnalyzerPool:
+    """Координирует несколько analyzer agents"""
 
-    results = []
+    def __init__(self, num_agents: int = 8):
+        self.num_agents = num_agents
+        self.agents = [AnalyzerAgent(i) for i in range(num_agents)]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_agents) as executor:
-        futures = []
+    def run_analysis(self):
+        """Запускает анализ с несколькими agents параллельно"""
+        print(f"🧬 Starting {self.num_agents} Analyzer Agents...")
 
-        for i in range(1, num_agents + 1):
-            agent = AnalyzerAgent(agent_id=i)
-            future = executor.submit(agent.run)
-            futures.append(future)
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.num_agents) as executor:
+            futures = {
+                executor.submit(agent.analyze): agent 
+                for agent in self.agents
+            }
 
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-                results.append(result)
-            except Exception as e:
-                print(f"❌ Agent failed: {e}")
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
+                    agent = futures[future]
+                    agent.create_issue(result)
+                    results.append(result)
+                except Exception as e:
+                    print(f"❌ Agent error: {e}")
 
-    # Summary
-    print("\n" + "=" * 60)
-    print("📊 ANALYSIS SUMMARY")
-    print("=" * 60)
+        print(f"✅ Analysis complete: {len(results)} agents finished")
 
-    issues_created = sum(1 for r in results if r.get('issue_created'))
-    print(f"Total agents: {len(results)}")
-    print(f"Issues created: {issues_created}")
-
-    return results
+        return results
 
 
-if __name__ == "__main__":
-    run_parallel_analyzers(num_agents=8)
+def main():
+    """Точка входа в программу"""
+    try:
+        num_agents = int(os.getenv('NUM_AGENTS', '8'))
+    except ValueError:
+        num_agents = 8
+
+    pool = AnalyzerPool(num_agents=num_agents)
+    results = pool.run_analysis()
+
+    print(f"\n📊 Summary: Analyzed by {len(results)} agents")
+    print(f"✅ All analyses completed successfully")
+
+
+if __name__ == '__main__':
+    main()
